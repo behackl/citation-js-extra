@@ -1,139 +1,8 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import Cite from "citation-js";
+import type { BadgeConfig, BibEntry, BibliographyOptions, FormatOptions } from "./types.js";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/**
- * Declares a badge link to render alongside bibliography entries.
- *
- * The `url` is a template string where `$1` is replaced by the (optionally
- * transformed) field value.  When `match` is provided, the field value is
- * tested against it first: if it doesn't match the badge is skipped; if it
- * does, `$1` in the URL is replaced by the **first capture group** (or the
- * full match if there is no capture group).
- *
- * @example
- * // Simple prefix-style DOI badge:
- * { field: 'doi', label: 'doi', url: 'https://doi.org/$1' }
- *
- * @example
- * // Strip trailing version from arXiv identifiers:
- * { field: 'arxiv', label: 'arXiv',
- *   url: 'https://arxiv.org/abs/$1',
- *   match: /^(.+?)(?:v\d+)?$/ }
- *
- * @example
- * // Only link zbMATH entries that look like a Zbl number:
- * { field: 'zbl', label: 'zbMATH',
- *   url: 'https://zbmath.org/?q=an:$1',
- *   match: /^(\d{4}\.\d{5})$/ }
- */
-export interface BadgeConfig {
-  /** BibTeX field name to read the value from. */
-  field: string;
-  /** Text to display inside the badge. */
-  label: string;
-  /** URL template — `$1` is replaced by the field value. */
-  url: string;
-  /**
-   * Optional regex applied to the field value.
-   *
-   * - If it **doesn't match**, the badge is skipped for that entry.
-   * - If it **matches**, `$1` in the URL is replaced by the first capture
-   *   group (or the full match when there are no capture groups).
-   */
-  match?: RegExp;
-  /** CSS class name(s) for the badge `<a>` element. */
-  className?: string;
-}
-
-/** Options passed to {@link Bibliography.formatHtml}. */
-export interface FormatOptions {
-  /**
-   * Fields to use for linking the title, checked in order.
-   * A `doi` value is expanded to `https://doi.org/<value>`, an `arxiv`
-   * value to `https://arxiv.org/abs/<value>`, and any field whose value
-   * already starts with `http` is used as-is.
-   *
-   * @default ['url', 'doi', 'arxiv']
-   */
-  titleLink?: string[];
-
-  /** Badge configurations to append to each entry. */
-  badges?: BadgeConfig[];
-
-  /**
-   * Wrapper list element.
-   * @default 'ol'
-   */
-  list?: "ol" | "ul" | "div";
-
-  /**
-   * HTML attributes for the wrapper element (e.g. `{ reversed: true }`).
-   * Boolean `true` renders as a valueless attribute.
-   *
-   * @default { reversed: true }  (when list is 'ol')
-   */
-  listAttributes?: Record<string, string | boolean>;
-
-  /**
-   * Auto-linkify bare `http(s)://` URLs in the rendered output that aren't
-   * already inside `<a>` tags.
-   *
-   * @default true
-   */
-  linkifyUrls?: boolean;
-}
-
-/** A bibliography entry enriched with custom BibTeX fields. */
-export interface BibEntry {
-  /** The CSL-JSON object used by citation-js for formatting. */
-  csl: Record<string, any>;
-  /** The BibTeX citation key. */
-  key: string;
-  /** Publication year (extracted from CSL `issued`). */
-  year: number | null;
-  /**
-   * Custom BibTeX fields that were requested via `customFields`.
-   * Only fields that are present on the entry appear here.
-   */
-  custom: Record<string, string>;
-  /** The full raw BibTeX properties (unfiltered). */
-  raw: Record<string, any>;
-}
-
-/** Options for constructing a {@link Bibliography}. */
-export interface BibliographyOptions {
-  /**
-   * BibTeX input — either a raw BibTeX string or a file path.
-   * When a file path is given, it is read synchronously at construction time.
-   */
-  data: string;
-
-  /**
-   * CSL style — a built-in template name (e.g. `'apa'`), raw CSL XML, or a
-   * file path to a `.csl` file.  When a file path is given, it is read
-   * synchronously.
-   *
-   * When a raw XML string or file is provided, it is registered under the
-   * name `'custom'` and used automatically by {@link Bibliography.formatHtml}
-   * and {@link Bibliography.formatEntry}.
-   *
-   * @default 'apa'
-   */
-  cslStyle?: string;
-
-  /**
-   * BibTeX field names to preserve through the citation-js pipeline.
-   * These are extracted from the raw BibTeX parse and made available on
-   * each {@link BibEntry} under `.custom`.
-   *
-   * Common examples: `['publication-status', 'arxiv', 'mrnumber', 'project']`.
-   */
-  customFields?: string[];
-}
+export type { BadgeConfig, BibEntry, BibliographyOptions, FormatOptions } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Bibliography class
@@ -242,13 +111,11 @@ export class Bibliography {
       .replace(/^<div[^>]*class="csl-entry"[^>]*>\s*/s, "")
       .replace(/\s*<\/div>\s*$/s, "");
 
-    // Link the title (first <i>...</i>)
+    // Link the title text
     const titleUrl = this.resolveTitleLink(entry, options.titleLink);
-    if (titleUrl) {
-      html = html.replace(
-        /(<i>)(.*?)(<\/i>)/,
-        `<a href="${escapeAttr(titleUrl)}">$1$2$3</a>`,
-      );
+    const title = entry.csl.title;
+    if (titleUrl && typeof title === "string" && title.trim()) {
+      html = this.linkTitle(html, title, titleUrl);
     }
 
     // Append badges
@@ -271,9 +138,10 @@ export class Bibliography {
     const attrs = options.listAttributes ?? (tag === "ol" ? { reversed: true } : {});
     const attrStr = renderAttributes(attrs);
 
+    const itemTag = tag === "div" ? "div" : "li";
     const items = entries.map((e) => {
       const inner = this.formatEntry(e, options);
-      return `<li data-csl-entry-id="${escapeAttr(e.key)}" class="csl-entry">${inner}</li>`;
+      return `<${itemTag} data-csl-entry-id="${escapeAttr(e.key)}" class="csl-entry">${inner}</${itemTag}>`;
     });
 
     let html = `<${tag}${attrStr} class="csl-bib-body">\n${items.join("\n")}\n</${tag}>`;
@@ -292,12 +160,23 @@ export class Bibliography {
   private registerStyle(cslStyle?: string): string {
     if (!cslStyle) return "apa";
 
-    const builtins = ["apa", "vancouver", "harvard1"];
-    if (builtins.includes(cslStyle)) return cslStyle;
-
-    const xml = maybeReadFile(cslStyle);
     const config = Cite.plugins.config.get("@csl");
-    config.templates.add("custom", xml);
+    const templates = config.templates;
+    if (typeof templates.has === "function" ? templates.has(cslStyle) : false) {
+      return cslStyle;
+    }
+    if (Array.isArray(templates.list?.()) && templates.list().includes(cslStyle)) {
+      return cslStyle;
+    }
+
+    const xml = readFileIfExists(cslStyle) ?? (looksLikeXml(cslStyle) ? cslStyle : null);
+    if (!xml) {
+      throw new Error(
+        `Unknown CSL style "${cslStyle}". Provide a built-in name, file path, or CSL XML.`,
+      );
+    }
+
+    templates.add("custom", xml);
     return "custom";
   }
 
@@ -316,6 +195,13 @@ export class Bibliography {
       return v;
     }
     return null;
+  }
+
+  private linkTitle(html: string, title: string, url: string): string {
+    const pattern = buildHtmlTextPattern(title);
+    if (!pattern) return html;
+    const regex = new RegExp(pattern);
+    return html.replace(regex, (match) => `<a href="${escapeAttr(url)}">${match}</a>`);
   }
 
   private renderBadges(entry: BibEntry, badges: BadgeConfig[]): string {
@@ -354,27 +240,87 @@ export class Bibliography {
  * the link.
  */
 export function linkifyBareUrls(html: string): string {
-  return html.replace(
-    /(?<!href="|href='|>)(https?:\/\/[^\s<,;)]+)/g,
-    (_match, url: string) => {
-      const trimmed = url.replace(/[.,;:!?)]+$/, "");
-      const trailing = url.slice(trimmed.length);
-      return `<a href="${trimmed}">${trimmed}</a>${trailing}`;
-    },
-  );
+  const tokens = html.split(/(<[^>]*>)/g);
+  const urlRegex = /(https?:\/\/[^\s<,;)]+)/g;
+  let insideAnchor = false;
+  const output: string[] = [];
+
+  for (const token of tokens) {
+    if (token.startsWith("<")) {
+      const lower = token.toLowerCase();
+      if (/^<a\b/.test(lower)) insideAnchor = true;
+      if (/^<\/a\b/.test(lower)) insideAnchor = false;
+      output.push(token);
+      continue;
+    }
+
+    if (insideAnchor) {
+      output.push(token);
+      continue;
+    }
+
+    output.push(
+      token.replace(urlRegex, (match) => {
+        const trimmed = match.replace(/[.,;:!?)]+$/, "");
+        const trailing = match.slice(trimmed.length);
+        return `<a href="${trimmed}">${trimmed}</a>${trailing}`;
+      }),
+    );
+  }
+
+  return output.join("");
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function maybeReadFile(input: string): string {
-  // If it looks like XML or BibTeX content, return as-is
-  if (input.includes("\n") || input.startsWith("@") || input.startsWith("<")) {
-    return input;
+function readFileIfExists(input: string): string | null {
+  if (!existsSync(input)) return null;
+  try {
+    if (!statSync(input).isFile()) return null;
+  } catch {
+    return null;
   }
-  // Otherwise treat as a file path
   return readFileSync(input, "utf-8");
+}
+
+function maybeReadFile(input: string): string {
+  return readFileIfExists(input) ?? input;
+}
+
+function looksLikeXml(input: string): boolean {
+  return /^\s*</.test(input);
+}
+
+function buildHtmlTextPattern(text: string): string {
+  let pattern = "";
+  for (const ch of text) {
+    switch (ch) {
+      case "&":
+        pattern += "(?:&amp;|&#38;)";
+        break;
+      case "<":
+        pattern += "&lt;";
+        break;
+      case ">":
+        pattern += "&gt;";
+        break;
+      case "\"":
+        pattern += "(?:&quot;|&#34;)";
+        break;
+      case "'":
+        pattern += "(?:&#39;|&apos;)";
+        break;
+      default:
+        pattern += escapeRegex(ch);
+    }
+  }
+  return pattern;
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeAttr(s: string): string {

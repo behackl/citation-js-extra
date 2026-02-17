@@ -25,7 +25,7 @@ import { Bibliography } from "@behackl/citation-js-extras";
 
 const bib = new Bibliography({
   data: "./references.bib", // file path or raw BibTeX string
-  cslStyle: "./my-style.csl", // optional: file path, raw XML, or built-in name
+  cslStyle: "./my-style.csl", // optional: file path, raw XML, or registered template name
   customFields: ["publication-status", "arxiv", "mrnumber"],
 });
 
@@ -56,7 +56,7 @@ const html = bib.formatHtml(sorted, {
 | Option | Type | Description |
 |---|---|---|
 | `data` | `string` | BibTeX input — a raw string or a file path. |
-| `cslStyle` | `string?` | CSL style — a built-in name (`'apa'`, `'vancouver'`, …), raw XML, or a file path. Defaults to `'apa'`. |
+| `cslStyle` | `string?` | CSL style — a registered template name, raw XML, or a file path. Defaults to `'apa'`. |
 | `customFields` | `string[]?` | BibTeX field names to preserve. These appear on each entry under `.custom`. |
 
 ### `bib.entries`
@@ -99,7 +99,7 @@ Render entries as a complete HTML bibliography list.
 bib.formatHtml(entries, {
   titleLink: ["url", "doi", "arxiv"],
   badges: [ /* ... */ ],
-  list: "ol", // 'ol', 'ul', or 'div'
+  list: "ol", // 'ol', 'ul', or 'div' (div uses <div class="csl-entry"> children)
   listAttributes: { reversed: true },
   linkifyUrls: true,
 });
@@ -107,7 +107,7 @@ bib.formatHtml(entries, {
 
 ### `bib.formatEntry(entry, options?)`
 
-Render a single entry as an HTML string (no list wrapper).
+Render a single entry as an HTML string (no list wrapper). The title link targets the actual CSL title text, regardless of italics.
 
 ### Badges
 
@@ -149,7 +149,7 @@ When `match` is provided, the field value is tested against the regex. If it doe
 
 ### `linkifyBareUrls(html)`
 
-Standalone utility: auto-linkify bare `http(s)://` URLs in HTML that aren't already inside `<a>` tags. Trailing punctuation is kept outside the link.
+Standalone utility: auto-linkify bare `http(s)://` URLs in HTML text nodes that aren't already inside `<a>` tags. Trailing punctuation is kept outside the link.
 
 ```ts
 import { linkifyBareUrls } from "@behackl/citation-js-extras";
@@ -160,7 +160,7 @@ linkifyBareUrls("See https://example.com.");
 
 ## Custom CSL styles
 
-Pass a file path or raw XML to `cslStyle`:
+Pass a file path or raw XML to `cslStyle`. You can also pass the name of any template already registered with citation-js:
 
 ```ts
 const bib = new Bibliography({

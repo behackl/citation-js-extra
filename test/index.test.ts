@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import Cite from "citation-js";
 import { Bibliography, linkifyBareUrls } from "../src/index.js";
 import { SAMPLE_BIB } from "./fixtures.js";
 
@@ -50,6 +53,25 @@ describe("parsing", () => {
     const widgets = bib.entries.find((e) => e.key.includes("widgets"))!;
     expect(widgets.raw.doi).toBe("10.1234/jws.2023.001");
     expect(widgets.raw["publication-status"]).toBe("published");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Input handling
+// ---------------------------------------------------------------------------
+
+describe("input handling", () => {
+  it("reads files even when the path starts with '@'", () => {
+    const tmpPath = join(process.cwd(), "test", "tmp", "@refs.bib");
+    mkdirSync(dirname(tmpPath), { recursive: true });
+    writeFileSync(tmpPath, "@Article{tmp, author={A B}, title={T}, year={2024}}\n");
+
+    try {
+      const bib = new Bibliography({ data: tmpPath });
+      expect(bib.entries).toHaveLength(1);
+    } finally {
+      rmSync(tmpPath, { force: true });
+    }
   });
 });
 
@@ -109,6 +131,23 @@ describe("sort", () => {
 });
 
 // ---------------------------------------------------------------------------
+// CSL styles
+// ---------------------------------------------------------------------------
+
+describe("csl styles", () => {
+  it("accepts pre-registered template names", () => {
+    const config = Cite.plugins.config.get("@csl");
+    const xml = config.templates.data.apa;
+    config.templates.add("apa-copy", xml);
+
+    expect(() => {
+      const bib = new Bibliography({ data: SAMPLE_BIB, cslStyle: "apa-copy" });
+      expect(bib.templateName).toBe("apa-copy");
+    }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Formatting: title links
 // ---------------------------------------------------------------------------
 
@@ -117,15 +156,18 @@ describe("formatEntry – title linking", () => {
     const bib = makeBib();
     const widgets = bib.entries.find((e) => e.key.includes("widgets"))!;
     const html = bib.formatEntry(widgets);
-    expect(html).toContain('<a href="https://example.com/widgets"><i>');
-    expect(html).toContain("On the Enumeration of Widgets");
+    expect(html).toContain(
+      '<a href="https://example.com/widgets">On the Enumeration of Widgets</a>',
+    );
   });
 
   it("falls back to DOI when no URL", () => {
     const bib = makeBib();
     const gadgets = bib.entries.find((e) => e.key.includes("gadgets"))!;
     const html = bib.formatEntry(gadgets);
-    expect(html).toContain('href="https://doi.org/10.5678/gr.2024.003"');
+    expect(html).toContain(
+      '<a href="https://doi.org/10.5678/gr.2024.003">Gadgets and their Applications</a>',
+    );
   });
 
   it("respects custom titleLink field order", () => {
@@ -133,7 +175,18 @@ describe("formatEntry – title linking", () => {
     const widgets = bib.entries.find((e) => e.key.includes("widgets"))!;
     // DOI first instead of URL
     const html = bib.formatEntry(widgets, { titleLink: ["doi", "url"] });
-    expect(html).toContain('href="https://doi.org/10.1234/jws.2023.001"');
+    expect(html).toContain(
+      '<a href="https://doi.org/10.1234/jws.2023.001">On the Enumeration of Widgets</a>',
+    );
+  });
+
+  it("links italicized titles", () => {
+    const bib = makeBib();
+    const preprint = bib.entries.find((e) => e.key.includes("preprint"))!;
+    const html = bib.formatEntry(preprint);
+    expect(html).toContain(
+      '<a href="https://arxiv.org/abs/2501.99999v2">A Preprint on Sprockets</a>',
+    );
   });
 });
 
@@ -241,6 +294,15 @@ describe("formatHtml", () => {
     expect(html).toMatch(/<\/ul>$/);
   });
 
+  it("supports <div> wrapper", () => {
+    const bib = makeBib();
+    const html = bib.formatHtml(bib.entries, { list: "div" });
+    expect(html).toMatch(/^<div class="csl-bib-body">/);
+    expect(html).toMatch(/<\/div>$/);
+    expect(html).toContain('class="csl-entry"');
+    expect(html).not.toContain("<li ");
+  });
+
   it("supports custom list attributes", () => {
     const bib = makeBib();
     const html = bib.formatHtml(bib.entries, {
@@ -272,6 +334,17 @@ describe("linkifyBareUrls", () => {
     expect(linkifyBareUrls("Visit https://example.com.")).toBe(
       'Visit <a href="https://example.com">https://example.com</a>.',
     );
+  });
+
+  it("linkifies URLs after tag boundaries", () => {
+    expect(linkifyBareUrls("<p>https://example.com</p>")).toBe(
+      '<p><a href="https://example.com">https://example.com</a></p>',
+    );
+  });
+
+  it("does not linkify URLs inside attributes", () => {
+    const input = '<img src="https://example.com/image.png">';
+    expect(linkifyBareUrls(input)).toBe(input);
   });
 
   it("does not double-linkify existing <a> tags", () => {
