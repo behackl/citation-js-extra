@@ -145,6 +145,26 @@ describe("csl styles", () => {
       expect(bib.templateName).toBe("apa-copy");
     }).not.toThrow();
   });
+
+  it("isolates raw XML styles across instances", () => {
+    const config = Cite.plugins.config.get("@csl");
+    const apaXml = config.templates.data.apa;
+    const vancouverXml = config.templates.data.vancouver;
+
+    const bibApa = new Bibliography({ data: SAMPLE_BIB, cslStyle: apaXml });
+    const bibVan = new Bibliography({ data: SAMPLE_BIB, cslStyle: vancouverXml });
+
+    expect(bibApa.templateName).not.toBe(bibVan.templateName);
+
+    const entryApa = bibApa.entries.find((e) => e.key.includes("gadgets"))!;
+    const entryVan = bibVan.entries.find((e) => e.key.includes("gadgets"))!;
+
+    const apaHtml = bibApa.formatEntry(entryApa);
+    const vanHtml = bibVan.formatEntry(entryVan);
+
+    expect(apaHtml).not.toContain('class="csl-left-margin"');
+    expect(vanHtml).toContain('class="csl-left-margin"');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -187,6 +207,14 @@ describe("formatEntry – title linking", () => {
     expect(html).toContain(
       '<a href="https://arxiv.org/abs/2501.99999v2">A Preprint on Sprockets</a>',
     );
+  });
+
+  it("skips unsafe title-link URLs", () => {
+    const bib = new Bibliography({
+      data: "@Article{x, author={A B}, title={Unsafe Title URL}, year={2024}, url={javascript:alert(1)}}",
+    });
+    const html = bib.formatEntry(bib.entries[0]);
+    expect(html).not.toContain('href="javascript:alert(1)"');
   });
 });
 
@@ -272,6 +300,34 @@ describe("formatEntry – badges", () => {
     const html = bib.formatEntry(entry, { badges: BADGES });
     expect(html).not.toContain("bib-zbl");
   });
+
+  it("escapes badge labels", () => {
+    const bib = new Bibliography({
+      data: "@Article{test, author={A B}, title={T}, year={2024}, doi={10.1/example}}",
+      customFields: ["doi"],
+    });
+    const entry = bib.entries[0];
+    const html = bib.formatEntry(entry, {
+      badges: [{ field: "doi", label: '<img src=x onerror=alert(1)>', url: "https://doi.org/$1" }],
+    });
+
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(html).not.toContain("<img src=x onerror=alert(1)>");
+  });
+
+  it("skips badges with unsafe URLs", () => {
+    const bib = new Bibliography({
+      data: "@Article{test, author={A B}, title={T}, year={2024}, doi={10.1/example}}",
+      customFields: ["doi"],
+    });
+    const entry = bib.entries[0];
+    const html = bib.formatEntry(entry, {
+      badges: [{ field: "doi", label: "bad", url: "javascript:alert(1)" }],
+    });
+
+    expect(html).not.toContain("bib-links");
+    expect(html).not.toContain('href="javascript:alert(1)"');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -313,6 +369,24 @@ describe("formatHtml", () => {
     expect(html).toContain('start="10"');
   });
 
+  it("preserves input entry order", () => {
+    const bib = makeBib();
+    const reversed = [...bib.entries].reverse();
+    const html = bib.formatHtml(reversed, { linkifyUrls: false });
+    const ids = [...html.matchAll(/data-csl-entry-id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual(reversed.map((e) => e.key));
+  });
+
+  it("keeps style-dependent numbering for numeric styles", () => {
+    const bib = makeBib({ cslStyle: "vancouver" });
+    const subset = bib.entries.slice(0, 3);
+    const html = bib.formatHtml(subset, { list: "ul", linkifyUrls: false });
+    const labels = [...html.matchAll(/class="csl-left-margin">(\d+)\.\s*<\/div>/g)].map(
+      (m) => m[1],
+    );
+    expect(labels).toEqual(["1", "2", "3"]);
+  });
+
   it("returns empty string for empty input", () => {
     const bib = makeBib();
     expect(bib.formatHtml([])).toBe("");
@@ -349,6 +423,16 @@ describe("linkifyBareUrls", () => {
 
   it("does not double-linkify existing <a> tags", () => {
     const input = '<a href="https://example.com">link</a>';
+    expect(linkifyBareUrls(input)).toBe(input);
+  });
+
+  it("does not linkify URLs inside <script> tags", () => {
+    const input = '<script>const u = "https://example.com";</script>';
+    expect(linkifyBareUrls(input)).toBe(input);
+  });
+
+  it("does not linkify URLs inside <style> tags", () => {
+    const input = '<style>.bg{background:url(https://example.com/bg.png)}</style>';
     expect(linkifyBareUrls(input)).toBe(input);
   });
 });
