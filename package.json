@@ -47,7 +47,7 @@
     "node": ">=18"
   },
   "sideEffects": false,
-  "packageManager": "pnpm@10.29.1",
+  "packageManager": "pnpm@10",
   "peerDependencies": {
     "citation-js": ">=0.7.0"
   },
