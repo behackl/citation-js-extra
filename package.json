@@ -32,6 +32,22 @@
   ],
   "author": "Benjamin Hackl",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/behackl/citation-js-extra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/behackl/citation-js-extra/issues"
+  },
+  "homepage": "https://github.com/behackl/citation-js-extra#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
+  "packageManager": "pnpm@10.29.1",
   "peerDependencies": {
     "citation-js": ">=0.7.0"
   },
