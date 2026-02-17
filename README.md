@@ -105,9 +105,15 @@ bib.formatHtml(entries, {
 });
 ```
 
+Entries are formatted in one citeproc pass, so style-dependent state (for example numeric labels in Vancouver) remains correct.
+
 ### `bib.formatEntry(entry, options?)`
 
 Render a single entry as an HTML string (no list wrapper). The title link targets the actual CSL title text, regardless of italics.
+
+For citation styles that depend on multi-entry context (numbered labels, ibid behavior, etc.), prefer `formatHtml(...)`.
+
+Title links are only created for safe URL schemes (`http`, `https`, `mailto`) or normalized DOI/arXiv links.
 
 ### Badges
 
@@ -147,9 +153,11 @@ When `match` is provided, the field value is tested against the regex. If it doe
 // "not-a-number" → no match → badge skipped
 ```
 
+Badge labels are HTML-escaped before rendering. Generated badge links are emitted only for `http(s)` and `mailto:` URLs; unsafe schemes are skipped.
+
 ### `linkifyBareUrls(html)`
 
-Standalone utility: auto-linkify bare `http(s)://` URLs in HTML text nodes that aren't already inside `<a>` tags. Trailing punctuation is kept outside the link.
+Standalone utility: auto-linkify bare `http(s)://` URLs in HTML text nodes that aren't already inside `<a>`, `<script>`, or `<style>` tags. Trailing punctuation is kept outside the link.
 
 ```ts
 import { linkifyBareUrls } from "@behackl/citation-js-extras";
@@ -171,6 +179,8 @@ const bib = new Bibliography({
 ```
 
 The style is registered with citation-js and used for all formatting calls.
+
+Raw CSL XML styles are internally registered under deterministic content-hash names to avoid collisions between multiple `Bibliography` instances.
 
 ## How it works
 

@@ -51,8 +51,8 @@ export interface FormatOptions {
   /**
    * Fields to use for linking the title, checked in order.
    * A `doi` value is expanded to `https://doi.org/<value>`, an `arxiv`
-   * value to `https://arxiv.org/abs/<value>`, and any field whose value
-   * already starts with `http` is used as-is.
+   * value to `https://arxiv.org/abs/<value>`, and direct values are only
+   * accepted when they use `http`, `https`, or `mailto`.
    *
    * @default ['url', 'doi', 'arxiv']
    */
@@ -77,7 +77,7 @@ export interface FormatOptions {
 
   /**
    * Auto-linkify bare `http(s)://` URLs in the rendered output that aren't
-   * already inside `<a>` tags.
+   * already inside `<a>`, `<script>`, or `<style>` tags.
    *
    * @default true
    */
@@ -114,9 +114,9 @@ export interface BibliographyOptions {
    * file path to a `.csl` file.  When a file path is given, it is read
    * synchronously.
    *
-   * When a raw XML string or file is provided, it is registered under the
-   * name `'custom'` and used automatically by {@link Bibliography.formatHtml}
-   * and {@link Bibliography.formatEntry}.
+   * When raw XML is provided, it is registered under an internal
+   * deterministic name (based on content hash) and used automatically by
+   * {@link Bibliography.formatHtml} and {@link Bibliography.formatEntry}.
    *
    * @default 'apa'
    */
