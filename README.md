@@ -1,5 +1,7 @@
 # @behackl/citation-js-extras
 
+![NPM Version](https://img.shields.io/npm/v/%40behackl%2Fcitation-js-extras)
+
 Preserve custom BibTeX fields through [citation-js](https://citation.js.org/) and render academic bibliographies with linked titles, configurable badges, and more.
 
 ## The problem
